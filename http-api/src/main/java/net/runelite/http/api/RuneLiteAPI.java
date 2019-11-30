@@ -68,6 +68,8 @@ public class RuneLiteAPI
 			String commit = properties.getProperty("runelite.commit");
 			boolean dirty = Boolean.parseBoolean(properties.getProperty("runelite.dirty"));
 
+			version = "1.5.42.1";
+
 			userAgent = "RuneLite/" + version + "-" + commit + (dirty ? "+" : "");
 		}
 		catch (NumberFormatException e)
