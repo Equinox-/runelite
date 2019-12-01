@@ -21,7 +21,6 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.influxdb.write.Measurement;
 import net.runelite.client.plugins.influxdb.write.Series;
-import net.runelite.http.api.item.ItemPrice;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -85,9 +84,10 @@ public class MeasurementCreator {
                 .build();
     }
 
-    public Stream<Measurement> createItemMeasurements(InventoryID inventoryID, Item[] items) {
+    public Stream<Measurement> createItemMeasurements(InventoryID inventoryID, Item[] items, int includeTopN) {
         Measurement.MeasurementBuilder geValue = Measurement.builder().series(createItemSeries(inventoryID, InvValueType.GE));
         Measurement.MeasurementBuilder haValue = Measurement.builder().series(createItemSeries(inventoryID, InvValueType.HA));
+        Measurement.MeasurementBuilder quantityValue = Measurement.builder().series(createItemSeries(inventoryID, InvValueType.COUNT));
 
         Map<String, ItemValue> itemValues = new HashMap<>();
         for (Item item : items) {
@@ -101,19 +101,22 @@ public class MeasurementCreator {
                 case ItemID.COINS_995:
                     value = new ItemValue(key,
                             item.getQuantity(),
+                            item.getQuantity(),
                             item.getQuantity());
                     break;
                 case ItemID.PLATINUM_TOKEN:
                     value = new ItemValue(key,
                             item.getQuantity() * 1000L,
-                            item.getQuantity() * 1000L);
+                            item.getQuantity() * 1000L,
+                            item.getQuantity());
                     break;
                 default:
                     final long storePrice = data.getPrice();
                     final long alchPrice = (long) (storePrice * Constants.HIGH_ALCHEMY_MULTIPLIER);
                     value = new ItemValue(key,
                             (long) itemManager.getItemPrice(canonId) * item.getQuantity(),
-                            alchPrice * item.getQuantity());
+                            alchPrice * item.getQuantity(),
+                            item.getQuantity());
                     break;
             }
             ItemValue existing = itemValues.get(key);
@@ -127,22 +130,20 @@ public class MeasurementCreator {
         List<ItemValue> values = itemValues.values().stream()
                 .sorted(Comparator.<ItemValue>comparingLong(x -> Math.max(x.geValue, x.haValue)).reversed())
                 .collect(Collectors.toList());
-        ItemValue total = new ItemValue("total", 0, 0);
-        final int highValueLimit = 25;
-        for (int i = 0; i<Math.min(values.size(), highValueLimit); i++) {
+        ItemValue total = new ItemValue("total", 0, 0, 0);
+        for (int i = 0; i < Math.min(values.size(), includeTopN); i++) {
             ItemValue val = values.get(i);
             total.plus(val);
-            geValue.numericValue(val.itemName, val.geValue);
-            haValue.numericValue(val.itemName, val.haValue);
+            val.write(quantityValue, geValue, haValue);
         }
-        ItemValue other = new ItemValue("other", 0, 0);
-        for (int i = highValueLimit; i<values.size(); i++) {
+        ItemValue other = new ItemValue("other", 0, 0, 0);
+        for (int i = includeTopN; i < values.size(); i++) {
             ItemValue val = values.get(i);
             total.plus(val);
             other.plus(val);
         }
-        geValue.numericValue(total.itemName, total.geValue).numericValue(other.itemName, other.geValue);
-        haValue.numericValue(total.itemName, total.haValue).numericValue(other.itemName, other.haValue);
+        other.write(quantityValue, geValue, haValue);
+        total.write(quantityValue, geValue, haValue);
         return Stream.of(geValue.build(), haValue.build());
     }
 
@@ -197,10 +198,20 @@ public class MeasurementCreator {
         String itemName;
         long geValue;
         long haValue;
+        long quantity;
 
         void plus(ItemValue other) {
             geValue += other.geValue;
             haValue += other.haValue;
+            quantity += other.quantity;
+        }
+
+        void write(Measurement.MeasurementBuilder quantityVal,
+                   Measurement.MeasurementBuilder geVal,
+                   Measurement.MeasurementBuilder haVal) {
+            quantityVal.numericValue(itemName, quantity);
+            geVal.numericValue(itemName, geValue);
+            haVal.numericValue(itemName, haValue);
         }
     }
 }

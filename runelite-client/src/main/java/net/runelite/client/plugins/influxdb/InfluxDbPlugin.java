@@ -1,5 +1,6 @@
 package net.runelite.client.plugins.influxdb;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -21,6 +22,7 @@ import net.runelite.client.task.Schedule;
 
 import javax.inject.Inject;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 @PluginDescriptor(
         name = "InfluxDB Integration",
@@ -68,6 +70,13 @@ public class InfluxDbPlugin extends Plugin {
         }
     }
 
+    private static final Map<InventoryID, Integer> INV_INCLUDE_TOP_N = ImmutableMap.<InventoryID, Integer>builder()
+            .put(InventoryID.BANK, 25)
+            .put(InventoryID.SEED_VAULT, 25)
+            .put(InventoryID.INVENTORY, 0)
+            .put(InventoryID.EQUIPMENT, 0)
+            .build();
+
     @Subscribe
     public void onItemContainerChanged(ItemContainerChanged event) {
         if (!config.writeBankValue()) return;
@@ -85,17 +94,20 @@ public class InfluxDbPlugin extends Plugin {
                 break;
             }
         }
-        if (id != InventoryID.BANK && id != InventoryID.SEED_VAULT)
+        if (id == null)
+            return;
+        Integer topN = INV_INCLUDE_TOP_N.get(id);
+        if (topN == null)
             return;
         if (writer.isBlocked(measurer.createItemSeries(id, MeasurementCreator.InvValueType.HA)))
             return;
-        measurer.createItemMeasurements(id, items).forEach(writer::submit);
+        measurer.createItemMeasurements(id, items, topN).forEach(writer::submit);
     }
 
     @Subscribe
     public void onGameTick(GameTick tick) {
         if (config.writeSelfLoc())
-        writer.submit(measurer.createSelfLocMeasurement());
+            writer.submit(measurer.createSelfLocMeasurement());
         if (config.writeSelfMeta())
             writer.submit(measurer.createSelfMeasurement());
     }
