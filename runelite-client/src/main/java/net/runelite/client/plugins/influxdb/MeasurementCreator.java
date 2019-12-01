@@ -142,9 +142,13 @@ public class MeasurementCreator {
             total.plus(val);
             other.plus(val);
         }
+
+        // Item count isn't useful for anything but specific items
+        other.quantity = 0L;
+        total.quantity = 0L;
         other.write(quantityValue, geValue, haValue);
         total.write(quantityValue, geValue, haValue);
-        return Stream.of(geValue.build(), haValue.build());
+        return Stream.of(geValue.build(), haValue.build(), quantityValue.build());
     }
 
     public Series createSelfLocSeries() {
@@ -209,7 +213,9 @@ public class MeasurementCreator {
         void write(Measurement.MeasurementBuilder quantityVal,
                    Measurement.MeasurementBuilder geVal,
                    Measurement.MeasurementBuilder haVal) {
-            quantityVal.numericValue(itemName, quantity);
+            if (quantity > 0) {
+                quantityVal.numericValue(itemName, quantity);
+            }
             geVal.numericValue(itemName, geValue);
             haVal.numericValue(itemName, haValue);
         }
